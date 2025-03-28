@@ -1,0 +1,1542 @@
+
+!pip install pandas==1.5.3 numpy==1.25.2 matplotlib==3.7.1 seaborn==0.13.1 scikit-learn==1.2.2 imbalanced-learn==0.10.1 xgboost==2.0.3 threadpoolctl==3.3.0 -q --user
+
+"""**Note:** After running the above cell, kindly restart the notebook kernel and run all cells sequentially from the start again."""
+
+# Libraries to help with reading and manipulating data
+import pandas as pd
+import numpy as np
+
+# Libaries to help with data visualization
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+from joblib import parallel_backend
+
+# To tune model, get different metric scores, and split data
+from sklearn.metrics import (
+    f1_score,
+    accuracy_score,
+    recall_score,
+    precision_score,
+    confusion_matrix,
+    roc_auc_score,
+    ConfusionMatrixDisplay,
+)
+from sklearn import metrics
+
+from sklearn.model_selection import train_test_split, StratifiedKFold, cross_val_score
+
+# To be used for data scaling and one hot encoding
+from sklearn.preprocessing import StandardScaler, MinMaxScaler, OneHotEncoder
+
+# To impute missing values
+from sklearn.impute import SimpleImputer
+
+# To oversample and undersample data
+from imblearn.over_sampling import SMOTE
+from imblearn.under_sampling import RandomUnderSampler
+
+# To do hyperparameter tuning
+from sklearn.model_selection import RandomizedSearchCV
+
+# To be used for creating pipelines and personalizing them
+from sklearn.pipeline import Pipeline
+from sklearn.compose import ColumnTransformer
+
+# To define maximum number of columns to be displayed in a dataframe
+pd.set_option("display.max_columns", None)
+pd.set_option("display.max_rows", None)
+
+# To supress scientific notations for a dataframe
+pd.set_option("display.float_format", lambda x: "%.3f" % x)
+
+# To help with model building
+from sklearn.linear_model import LogisticRegression
+from sklearn.tree import DecisionTreeClassifier
+from sklearn.ensemble import (
+    AdaBoostClassifier,
+    GradientBoostingClassifier,
+    RandomForestClassifier,
+    BaggingClassifier,
+)
+from xgboost import XGBClassifier
+
+# To suppress scientific notations
+pd.set_option("display.float_format", lambda x: "%.3f" % x)
+
+# To suppress warnings
+import warnings
+
+warnings.filterwarnings("ignore")
+
+"""## Loading the dataset"""
+
+# Mounting drive in colab
+from google.colab import drive
+drive.mount('/content/drive')
+
+# deriving path for training data file to upload
+path = '/content/drive/MyDrive/Train.csv'
+data = pd.read_csv(path)
+
+# deriving path for testing data file to upload
+path1 = '/content/drive/MyDrive/Test.csv'
+data_test = pd.read_csv(path1)
+
+# Let's create a copy of train data
+df = data.copy()
+
+# Let's creat a copy of test data
+df_test = data_test.copy()
+
+# checking first five rows of train data
+data.head()
+
+# Checking first five rows of test data
+data_test.head()
+
+# Checking last five rows of train data
+data.tail()
+
+# Checking last five rows of test data
+data_test.tail()
+
+# Checking shape of train data
+data.shape
+
+# Checking shape of test data
+data_test.shape
+
+# Checking description of train data
+data.describe(include='all').T
+
+# Checking description of test data
+data_test.describe(include='all').T
+
+# Checking info of train data
+data.info()
+
+# Checking info of test data
+data_test.info()
+
+# Checking number of null values in train data
+data.isnull().sum()
+
+# Checking number of null values in test data
+data_test.isnull().sum()
+
+"""Observation: There are total 36 missing values in train data and 11 missing values in test data. We will impute missing value treatment after splitting the data."""
+
+# Checking duplicates in train data
+data.duplicated().sum()
+
+# Checking duplicates in test data
+data_test.duplicated().sum()
+
+"""Observations: No duplicates present in train or test data
+
+## Data Overview
+
+- Observations
+- Sanity checks
+"""
+
+# Checking number of uniques values in train data
+data.nunique()
+
+# Checking number of uniques values in test data
+data_test.nunique()
+
+"""## Exploratory Data Analysis (EDA)
+
+### Plotting histograms and boxplots for all the variables
+"""
+
+# function to plot a boxplot and a histogram along the same scale.
+
+
+def histogram_boxplot(data, feature, figsize=(12, 7), kde=False, bins=None):
+    """
+    Boxplot and histogram combined
+
+    data: dataframe
+    feature: dataframe column
+    figsize: size of figure (default (12,7))
+    kde: whether to the show density curve (default False)
+    bins: number of bins for histogram (default None)
+    """
+    f2, (ax_box2, ax_hist2) = plt.subplots(
+        nrows=2,  # Number of rows of the subplot grid= 2
+        sharex=True,  # x-axis will be shared among all subplots
+        gridspec_kw={"height_ratios": (0.25, 0.75)},
+        figsize=figsize,
+    )  # creating the 2 subplots
+    sns.boxplot(
+        data=data, x=feature, ax=ax_box2, showmeans=True, color="violet"
+    )  # boxplot will be created and a star will indicate the mean value of the column
+    sns.histplot(
+        data=data, x=feature, kde=kde, ax=ax_hist2, bins=bins, palette="winter"
+    ) if bins else sns.histplot(
+        data=data, x=feature, kde=kde, ax=ax_hist2
+    )  # For histogram
+    ax_hist2.axvline(
+        data[feature].mean(), color="green", linestyle="--"
+    )  # Add mean to the histogram
+    ax_hist2.axvline(
+        data[feature].median(), color="black", linestyle="-"
+    )  # Add median to the histogram
+
+"""### Plotting all the features at one go"""
+
+for feature in df.columns:
+    histogram_boxplot(df, feature, figsize=(12, 7), kde=False, bins=None) ## Please change the dataframe name as you define while reading the data
+
+# Checking the number of 'No Failure' vs 'Failure' ration
+data['Target'].value_counts()
+
+"""Observations:
+
+1. All the columns from V1 to V40 shows normal distribution
+
+2. There are higher number of 'No Failures' than 'Failures'. In train data, total number of 'No failure' are 18890 and 'Failure' are 1110 which means there could be class imbalance in predicting data
+"""
+
+# function to plot a boxplot and a histogram along the same scale for test data
+
+
+def histogram_boxplot(data, feature, figsize=(12, 7), kde=False, bins=None):
+    """
+    Boxplot and histogram combined
+
+    data: dataframe
+    feature: dataframe column
+    figsize: size of figure (default (12,7))
+    kde: whether to the show density curve (default False)
+    bins: number of bins for histogram (default None)
+    """
+    f2, (ax_box2, ax_hist2) = plt.subplots(
+        nrows=2,  # Number of rows of the subplot grid= 2
+        sharex=True,  # x-axis will be shared among all subplots
+        gridspec_kw={"height_ratios": (0.25, 0.75)},
+        figsize=figsize,
+    )  # creating the 2 subplots
+    sns.boxplot(
+        data=data_test, x=feature, ax=ax_box2, showmeans=True, color="violet"
+    )  # boxplot will be created and a star will indicate the mean value of the column
+    sns.histplot(
+        data=data_test, x=feature, kde=kde, ax=ax_hist2, bins=bins, palette="winter"
+    ) if bins else sns.histplot(
+        data=data_test, x=feature, kde=kde, ax=ax_hist2
+    )  # For histogram
+    ax_hist2.axvline(
+        data[feature].mean(), color="green", linestyle="--"
+    )  # Add mean to the histogram
+    ax_hist2.axvline(
+        data[feature].median(), color="black", linestyle="-"
+    )  # Add median to the histogram
+
+for feature in df_test.columns:
+    histogram_boxplot(df_test, feature, figsize=(12, 7), kde=False, bins=None)
+
+# Checking value counts of 0 and 1
+data_test['Target'].value_counts()
+
+"""Observations:
+
+1. All columns from V1 to V40 demonstrates normal distribution
+
+2. Number of 'No failure' outnumbered 'failure' in target variable. There are 4718 '0' and 282 '1' in test data target variable which means class is imbalanced in test data as well.
+
+# **Bivariate Analysis:**
+"""
+
+# plotting heat map of train data
+plt.figure(figsize=(14, 10), dpi=150)  # Increase figure size and resolution
+
+heatmap = sns.heatmap(data.corr(),
+                      annot=True,
+                      fmt=".2f",
+                      annot_kws={'size': 6.5},  # Increase font size
+                      vmin=-1, vmax=1,
+                      cmap='coolwarm',
+                      linewidths=0.5,
+                      square=True)
+
+
+plt.tight_layout()
+plt.show();
+
+# Plotting heatmap for test data
+plt.figure(figsize=(14, 10), dpi=150)  # Increase figure size and resolution
+
+heatmap = sns.heatmap(data_test.corr(),
+                      annot=True,
+                      fmt=".2f",
+                      annot_kws={'size': 6.5},  # Increase font size
+                      vmin=-1, vmax=1,
+                      cmap='coolwarm',
+                      linewidths=0.5,
+                      square=True)
+
+
+plt.tight_layout()
+plt.show();
+
+"""Observations:
+
+1. There are some strong correlations depicted in heatmap which is common in both train and test set
+
+2. V2 and V26 demonstrate strong correlation which means V2 increases than V26 will increase as well
+
+3. V7 is directly proportional to V15
+
+4. V16 is directly proportional to V8 and V21
+
+5. V11 is directly proportional to V29
+
+6. V24 is directly proportional to V32
+
+## Data Pre-processing
+"""
+
+# Dividing data into X and y
+X = data.drop(['Target'], axis=1)
+y = data['Target']
+
+# Splitting train data in train and validation set
+X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.3, random_state=1, stratify=y)
+print('Shape of X_train:', X_train.shape)
+print('Shape of X_val:', X_val.shape)
+print('Shape of y_train:', y_train.shape)
+print('Shape of y_val:', y_val.shape)
+
+# Splitting test data in X_test and y_test
+X_test = data_test.drop(['Target'], axis=1)
+y_test = data_test['Target']
+print('Shape of X_test:', X_test.shape)
+print('Shape of y_test:', y_test.shape)
+
+"""## Missing value imputation
+
+
+
+"""
+
+# calling simple imputation function
+imputer = SimpleImputer(strategy='median')
+
+"""We will impute missing values with median because it is continuous values and also, some variables were skewed and has outliers"""
+
+# Imputing the value of X_train, X_val and X_test with simple imputer (median)
+X_train = pd.DataFrame(imputer.fit_transform(X_train), columns=X_train.columns)
+X_val = pd.DataFrame(imputer.transform(X_val), columns=X_train.columns)
+X_test = pd.DataFrame(imputer.transform(X_test), columns=X_train.columns)
+
+# Checking that no column has missing values in train or test sets
+print(X_train.isna().sum())
+print("-" * 30)
+print(X_val.isna().sum())
+print("-" * 30)
+print(X_test.isna().sum())
+
+"""We have done missing value treatment and as we can see there are no null values present in this data now on.
+
+## Model Building
+
+### Model evaluation criterion
+
+The nature of predictions made by the classification model will translate as follows:
+
+- True positives (TP) are failures correctly predicted by the model.
+- False negatives (FN) are real failures in a generator where there is no detection by model.
+- False positives (FP) are failure detections in a generator where there is no failure.
+
+**Which metric to optimize?**
+
+* We need to choose the metric which will ensure that the maximum number of generator failures are predicted correctly by the model.
+* We would want Recall to be maximized as greater the Recall, the higher the chances of minimizing false negatives.
+* We want to minimize false negatives because if a model predicts that a machine will have no failure when there will be a failure, it will increase the maintenance cost.
+
+**Let's define a function to output different metrics (including recall) on the train and test set and a function to show confusion matrix so that we do not have to use the same code repetitively while evaluating models.**
+"""
+
+# defining a function to compute different metrics to check performance of a classification model built using sklearn
+def model_performance_classification_sklearn(model, predictors, target):
+    """
+    Function to compute different metrics to check classification model performance
+
+    model: classifier
+    predictors: independent variables
+    target: dependent variable
+    """
+
+    # predicting using the independent variables
+    pred = model.predict(predictors)
+
+    acc = accuracy_score(target, pred)  # to compute Accuracy
+    recall = recall_score(target, pred)  # to compute Recall
+    precision = precision_score(target, pred)  # to compute Precision
+    f1 = f1_score(target, pred)  # to compute F1-score
+
+    # creating a dataframe of metrics
+    df_perf = pd.DataFrame(
+        {
+            "Accuracy": acc,
+            "Recall": recall,
+            "Precision": precision,
+            "F1": f1
+
+        },
+        index=[0],
+    )
+
+    return df_perf
+
+def confusion_matrix_sklearn(model, predictors, target):
+    """
+    To plot the confusion_matrix with percentages
+
+    model: classifier
+    predictors: independent variables
+    target: dependent variable
+    """
+    y_pred = model.predict(predictors)
+    cm = confusion_matrix(target, y_pred)
+    labels = np.asarray(
+        [
+            ["{0:0.0f}".format(item) + "\n{0:.2%}".format(item / cm.flatten().sum())]
+            for item in cm.flatten()
+        ]
+    ).reshape(2, 2)
+
+    plt.figure(figsize=(6, 4))
+    sns.heatmap(cm, annot=labels, fmt="")
+    plt.ylabel("True label")
+    plt.xlabel("Predicted label")
+
+"""### Defining scorer to be used for cross-validation and hyperparameter tuning
+
+- We want to reduce false negatives and will try to maximize "Recall".
+- To maximize Recall, we can use Recall as a **scorer** in cross-validation and hyperparameter tuning.
+"""
+
+# Type of scoring used to compare parameter combinations
+scorer = metrics.make_scorer(metrics.recall_score)
+
+"""### Model Building with original data
+
+Sample Decision Tree model building with original data
+"""
+
+models = []  # Empty list to store all the models
+
+# Appending models into the list
+models.append(("dtree", DecisionTreeClassifier(random_state=1)))
+models.append(("log.reg", LogisticRegression(random_state=1)))
+models.append(("bg", BaggingClassifier(random_state=1)))
+models.append(("rf", RandomForestClassifier(random_state=1)))
+models.append(("ada", AdaBoostClassifier(random_state=1)))
+models.append(("gb", GradientBoostingClassifier(random_state=1)))
+models.append(("xg", XGBClassifier(random_state=1)))
+
+results1 = []  # Empty list to store all model's CV scores
+names = []  # Empty list to store name of the models
+
+
+# loop through all models to get the mean cross validated score
+print("\n" "Cross-Validation performance on training dataset:" "\n")
+
+for name, model in models:
+    kfold = StratifiedKFold(
+        n_splits=5, shuffle=True, random_state=1
+    )  # Setting number of splits equal to 5
+    cv_result = cross_val_score(
+        estimator=model, X=X_train, y=y_train, scoring=scorer, cv=kfold
+    )
+    results1.append(cv_result)
+    names.append(name)
+    print("{}: {}".format(name, cv_result.mean()))
+
+print("\n" "Validation Performance:" "\n")
+
+for name, model in models:
+    model.fit(X_train, y_train)
+    scores = recall_score(y_val, model.predict(X_val))
+    print("{}: {}".format(name, scores))
+
+# Plotting boxplots for CV scores of all models defined above
+fig = plt.figure(figsize=(10, 7))
+
+fig.suptitle("Algorithm Comparison")
+ax = fig.add_subplot(111)
+
+plt.boxplot(results1)
+ax.set_xticklabels(names)
+
+plt.show()
+
+"""Observations:
+
+1. The decision tree cross validation accuracy was 70.78% and validation data set recall score was 70.57%
+2. The logistic regression cross validation accuracy was 49.02% and validation data set recall score was 50.15%
+3. The bagging classifier cross validation accuracy was 70.78% and validation data set recall score was 72.67%
+4. The random forest classifier cross validation accuracy was 71.94% and validation data set recall score was 73.57%
+5. The adaboost classifier cross validation accuracy was 51.09% and validation data set recall score was 55.55%
+6. The gradient boosting cross validation accuracy was 72.20% and validation data set recall score was 73.57%
+7. The xgboost cross validation accuracy was 80.95% and validation data set recall score was 82.88%
+
+XGBoost Classifier model cross validation accuracy score as well as validation data set recall score is outperforming all the other models in predicting the failure and non-failure of generators
+
+### Model Building with Oversampled data
+"""
+
+print("Before OverSampling, counts of label '1': {}".format(sum(y_train == 1)))
+print("Before OverSampling, counts of label '0': {} \n".format(sum(y_train == 0)))
+
+# Synthetic Minority Over Sampling Technique
+sm = SMOTE(sampling_strategy=1, k_neighbors=5, random_state=1)
+X_train_over, y_train_over = sm.fit_resample(X_train, y_train)
+
+
+print("After OverSampling, counts of label '1': {}".format(sum(y_train_over == 1)))
+print("After OverSampling, counts of label '0': {} \n".format(sum(y_train_over == 0)))
+
+
+print("After OverSampling, the shape of train_X: {}".format(X_train_over.shape))
+print("After OverSampling, the shape of train_y: {} \n".format(y_train_over.shape))
+
+models_over = []  # Empty list to store all the models
+
+# Appending models into the list
+models_over.append(("dtree_over", DecisionTreeClassifier(random_state=1)))
+models_over.append(("log.reg_over", LogisticRegression(random_state=1)))
+models_over.append(("bg_over", BaggingClassifier(random_state=1)))
+models_over.append(("rf_over", RandomForestClassifier(random_state=1)))
+models_over.append(("ada_over", AdaBoostClassifier(random_state=1)))
+models_over.append(("gb_over", GradientBoostingClassifier(random_state=1)))
+models_over.append(("xg_over", XGBClassifier(random_state=1)))
+
+results1_over = []  # Empty list to store all model's CV scores
+names_over = []  # Empty list to store name of the models
+
+
+# loop through all models to get the mean cross validated score
+print("\n" "Cross-Validation performance on training dataset_oversampled:" "\n")
+
+for name, model in models_over:
+    kfold = StratifiedKFold(
+        n_splits=5, shuffle=True, random_state=1
+    )  # Setting number of splits equal to 5
+    cv_result_over = cross_val_score(
+        estimator=model, X=X_train_over, y=y_train_over, scoring=scorer, cv=kfold
+    )  ## Complete the code to build models on oversampled data
+    results1_over.append(cv_result_over)
+    names_over.append(name)
+    print("{}: {}".format(name, cv_result_over.mean()))
+
+print("\n" "Validation Performance_over sampled:" "\n")
+
+for name, model in models_over:
+    model.fit(X_train_over,y_train_over)## Complete the code to build models on oversampled data
+    scores = recall_score(y_val, model.predict(X_val))
+    print("{}: {}".format(name, scores))
+
+# Plotting boxplots for CV scores of all models defined above
+fig = plt.figure(figsize=(10, 7))
+
+fig.suptitle("Algorithm Comparison_oversampled")
+ax = fig.add_subplot(111)
+
+plt.boxplot(results1_over)
+ax.set_xticklabels(names_over)
+
+plt.show()
+
+"""Observations on OverSampled model:
+
+1. The decision tree cross validation accuracy was 97.01% and validation data set recall score was 78.37%
+2. The logistic regression cross validation accuracy was 89.17% and validation data set recall score was 84.98%
+3. The bagging classifier cross validation accuracy was 97.51% and validation data set recall score was 82.58%
+4. The random forest classifier cross validation accuracy was 98.29% and validation data set recall score was 85.58%
+5. The adaboost classifier cross validation accuracy was 89.66% and validation data set recall score was 85.88%
+6. The gradient boosting cross validation accuracy was 93.29% and validation data set recall score was 87.68%
+7. The xgboost cross validation accuracy was 99.04% and validation data set recall score was 85.58%
+
+
+Almost every model's accuracy of cross validation and validation data recall score after oversampling has been improved.
+
+
+Looks like RandomForest Classifier, Gradient Boost classifier and XGBoost Classifier oversampled models' cross validation accuracy score as well as validation data set recall score is outperforming all the other models in predicting the failure and non-failure of generators
+
+### Model Building with Undersampled data
+"""
+
+print("Before UnderSampling, counts of label '1': {}".format(sum(y_train == 1)))
+print("Before UnderSampling, counts of label '0': {} \n".format(sum(y_train == 0)))
+
+# Random undersampler for under sampling the data
+rus = RandomUnderSampler(random_state=1, sampling_strategy=1)
+X_train_un, y_train_un = rus.fit_resample(X_train, y_train)
+
+
+print("After UnderSampling, counts of label '1': {}".format(sum(y_train_un == 1)))
+print("After UnderSampling, counts of label '0': {} \n".format(sum(y_train_un == 0)))
+
+
+print("After UnderSampling, the shape of train_X: {}".format(X_train_un.shape))
+print("After UnderSampling, the shape of train_y: {} \n".format(y_train_un.shape))
+
+models_un = []  # Empty list to store all the models
+
+# Appending models into the list
+models_un.append(("dtree_un", DecisionTreeClassifier(random_state=1)))
+models_un.append(("log.reg_un", LogisticRegression(random_state=1)))
+models_un.append(("bg_un", BaggingClassifier(random_state=1)))
+models_un.append(("rf_un", RandomForestClassifier(random_state=1)))
+models_un.append(("ada_un", AdaBoostClassifier(random_state=1)))
+models_un.append(("gb_un", GradientBoostingClassifier(random_state=1)))
+models_un.append(("xg_un", XGBClassifier(random_state=1)))
+
+results1_un = []  # Empty list to store all model's CV scores
+names_un = []  # Empty list to store name of the models
+
+
+# loop through all models to get the mean cross validated score
+print("\n" "Cross-Validation performance on training dataset_undersampled:" "\n")
+
+for name, model in models_un:
+    kfold = StratifiedKFold(
+        n_splits=5, shuffle=True, random_state=1
+    )  # Setting number of splits equal to 5
+    cv_result_un = cross_val_score(
+        estimator=model, X=X_train_un, y=y_train_un, scoring=scorer, cv=kfold
+    )  ## Complete the code to build models on oversampled data
+    results1_un.append(cv_result_un)
+    names_un.append(name)
+    print("{}: {}".format(name, cv_result_un.mean()))
+
+print("\n" "Validation Performance_Under sampled:" "\n")
+
+for name, model in models_un:
+    model.fit(X_train_un,y_train_un)## Complete the code to build models on oversampled data
+    scores = recall_score(y_val, model.predict(X_val))
+    print("{}: {}".format(name, scores))
+
+# Plotting boxplots for CV scores of all models defined above
+fig = plt.figure(figsize=(10, 7))
+
+fig.suptitle("Algorithm Comparison_oversampled")
+ax = fig.add_subplot(111)
+
+plt.boxplot(results1_un)
+ax.set_xticklabels(names_un)
+
+plt.show()
+
+"""Observations on UnderSampling:
+
+1. The decision tree cross validation accuracy was 86.22% and validation data set recall score was 84.08%
+2. The logistic regression cross validation accuracy was 87.26% and validation data set recall score was 84.68%
+3. The bagging classifier cross validation accuracy was 88.03% and validation data set recall score was 87.08%
+4. The random forest classifier cross validation accuracy was 90.34% and validation data set recall score was 88.28%
+5. The adaboost classifier cross validation accuracy was 86.87% and validation data set recall score was 84.68%
+6. The gradient boosting cross validation accuracy was 89.32% and validation data set recall score was 88.28%
+7. The xgboost cross validation accuracy was 89.83% and validation data set recall score was 88.28%
+
+Seems like undersampling reduces accuracy of cross validation as well as validation recall score compared to Oversampling. Hence, oversampling is more preferrable than undersampling.
+
+Random Forest, Gradient boost and XGboost undersampled models outperformed others as per results.
+
+## HyperparameterTuning
+
+**Observations:**
+
+Choosing best models for hypertuning from previous results of CV and validation recall score:
+
+From the above results, the models which are concluded to further hypertuning are: **RandomForest Classifier, GradientBoost Classifier and XGBoost Classifier**
+
+We will also perform tuning on decision tree classifier as mentioned in following project
+
+### Sample Parameter Grids
+
+**Hyperparameter tuning can take a long time to run, so to avoid that time complexity - you can use the following grids, wherever required.**
+
+- For Gradient Boosting:
+
+param_grid = {
+    "n_estimators": np.arange(100,150,25),
+    "learning_rate": [0.2, 0.05, 1],
+    "subsample":[0.5,0.7],
+    "max_features":[0.5,0.7]
+}
+
+- For Adaboost:
+
+param_grid = {
+    "n_estimators": [100, 150, 200],
+    "learning_rate": [0.2, 0.05],
+    "base_estimator": [DecisionTreeClassifier(max_depth=1, random_state=1), DecisionTreeClassifier(max_depth=2, random_state=1), DecisionTreeClassifier(max_depth=3, random_state=1),
+    ]
+}
+
+- For Bagging Classifier:
+
+param_grid = {
+    'max_samples': [0.8,0.9,1],
+    'max_features': [0.7,0.8,0.9],
+    'n_estimators' : [30,50,70],
+}
+
+- For Random Forest:
+
+param_grid = {
+    "n_estimators": [200,250,300],
+    "min_samples_leaf": np.arange(1, 4),
+    "max_features": [np.arange(0.3, 0.6, 0.1),'sqrt'],
+    "max_samples": np.arange(0.4, 0.7, 0.1)
+}
+
+- For Decision Trees:
+
+param_grid = {
+    'max_depth': np.arange(2,6),
+    'min_samples_leaf': [1, 4, 7],
+    'max_leaf_nodes' : [10, 15],
+    'min_impurity_decrease': [0.0001,0.001]
+}
+
+- For Logistic Regression:
+
+param_grid = {'C': np.arange(0.1,1.1,0.1)}
+
+- For XGBoost:
+
+param_grid={
+    'n_estimators': [150, 200, 250],
+    'scale_pos_weight': [5,10],
+    'learning_rate': [0.1,0.2],
+    'gamma': [0,3,5],
+    'subsample': [0.8,0.9]
+}
+
+### Sample tuning method for Decision tree with original data
+"""
+
+# Commented out IPython magic to ensure Python compatibility.
+# %%time
+# # defining model
+# Model_dt = DecisionTreeClassifier(random_state=1)
+# 
+# # Parameter grid to pass in RandomSearchCV
+# param_grid = {'max_depth': np.arange(2,6),
+#               'min_samples_leaf': [1, 4, 7],
+#               'max_leaf_nodes' : [10,15],
+#               'min_impurity_decrease': [0.0001,0.001] }
+# 
+# #Calling RandomizedSearchCV
+# randomized_cv = RandomizedSearchCV(estimator=Model_dt, param_distributions=param_grid, n_iter=10, n_jobs = 1, scoring=scorer, cv=5, random_state=1)
+# 
+# #Fitting parameters in RandomizedSearchCV
+# randomized_cv.fit(X_train,y_train)
+# 
+# print("Best parameters are {} with CV score={}:" .format(randomized_cv.best_params_,randomized_cv.best_score_))
+
+# Creating new pipeline with best parameters
+tuned_dt = DecisionTreeClassifier(
+    min_samples_leaf=7,
+    min_impurity_decrease=0.0001,
+    max_leaf_nodes=15,
+    max_depth=np.int64(5),
+    random_state=1)
+
+tuned_dt.fit(X_train, y_train)
+
+# Model performance of train set
+dt_score = model_performance_classification_sklearn(tuned_dt, X_train, y_train)
+dt_score
+
+# Model Performance on val set
+dt_score_val = model_performance_classification_sklearn(tuned_dt, X_val, y_val)
+dt_score_val
+
+confusion_matrix_sklearn(tuned_dt, X_val, y_val)
+
+"""Observations:
+
+1. Tuned Decision Tree train set performance was 97.6% Accuracy, 63.1% Recall, 91.1% Precision and 74.5% F1 score
+
+2. Tuned Decision Tree validation set performance was 97.2% Accuracy, 63.1% Recall, 81.4% Precision and 71.1% F1 score
+
+3. Time taken for tuned model to run was 16.8 s
+
+4. Cross validation accuracy score was 55.07%
+
+Hence, validation set shows slightly low performance score compared to training set
+
+### Sample tuning method for Decision tree with oversampled data
+"""
+
+# Commented out IPython magic to ensure Python compatibility.
+# %%time
+# # defining model
+# Model_dt_over = DecisionTreeClassifier(random_state=1)
+# 
+# # Parameter grid to pass in RandomSearchCV
+# param_grid = {'max_depth': np.arange(2,6),
+#               'min_samples_leaf': [1, 4, 7],
+#               'max_leaf_nodes' : [10,15],
+#               'min_impurity_decrease': [0.0001,0.001] }
+# 
+# #Calling RandomizedSearchCV
+# randomized_cv = RandomizedSearchCV(estimator=Model_dt_over, param_distributions=param_grid, n_iter=10, n_jobs = 1, scoring=scorer, cv=5, random_state=1)
+# 
+# #Fitting parameters in RandomizedSearchCV
+# randomized_cv.fit(X_train_over,y_train_over)
+# 
+# print("Best parameters are {} with CV score={}:" .format(randomized_cv.best_params_,randomized_cv.best_score_))
+
+# Creating new pipeline with best parameters
+tuned_dt_over = DecisionTreeClassifier(
+    min_samples_leaf=7,
+    min_impurity_decrease=0.001,
+    max_leaf_nodes=15,
+    max_depth=np.int64(3),
+    random_state=1)
+
+tuned_dt_over.fit(X_train_over, y_train_over)
+
+# Model performance on training set
+dt_score_over = model_performance_classification_sklearn(tuned_dt_over, X_train_over, y_train_over)
+dt_score_over
+
+# Model performance on validation set
+dt_score_over_val = model_performance_classification_sklearn(tuned_dt_over, X_val, y_val)
+dt_score_over_val
+
+confusion_matrix_sklearn(tuned_dt_over, X_val, y_val)
+
+"""Observations:
+
+1. Tuned Decision Tree train set performance was 84.3% Accuracy, 92,5% Recall, 79.4% Precision and 85.5% F1 score
+
+2. Tuned Decision Tree validation set performance was 75.4% Accuracy, 87.7% Recall, 16.9% Precision and 28.4% F1 score
+
+3. Time taken for tuned model to run was 32.2 s
+
+4. Cross validation accuracy score was 92.40%
+
+Hence, validation set shows slightly low performance score compared to training set. Also, we are getting improved Recall score on oversampled data compared to original data but Precision and F1 score were less compared to original data. Also, this oversampled model took more time to run than original data. This model gave improved cross validation accuracy score of 92.40% compared to original model
+
+### Sample tuning method for Decision tree with undersampled data
+"""
+
+# Commented out IPython magic to ensure Python compatibility.
+# %%time
+# # defining model
+# Model_dt_un = DecisionTreeClassifier(random_state=1)
+# 
+# # Parameter grid to pass in RandomSearchCV
+# param_grid = {'max_depth': np.arange(2,20),
+#               'min_samples_leaf': [1, 2, 5, 7],
+#               'max_leaf_nodes' : [5, 10,15],
+#               'min_impurity_decrease': [0.0001,0.001] }
+# 
+# #Calling RandomizedSearchCV
+# randomized_cv = RandomizedSearchCV(estimator=Model_dt_un, param_distributions=param_grid, n_iter=10, n_jobs = 1, scoring=scorer, cv=5, random_state=1)
+# 
+# #Fitting parameters in RandomizedSearchCV
+# randomized_cv.fit(X_train_un,y_train_un)
+# 
+# print("Best parameters are {} with CV score={}:" .format(randomized_cv.best_params_,randomized_cv.best_score_))
+
+# Creating new pipeline with best parameters
+tuned_dt_un = DecisionTreeClassifier(
+    min_samples_leaf=1,
+    min_impurity_decrease=0.001,
+    max_leaf_nodes=15,
+    max_depth=np.int64(11),
+    random_state=1)
+
+tuned_dt_un.fit(X_train_un, y_train_un)
+
+# Model performance on training set
+dt_score_un = model_performance_classification_sklearn(tuned_dt_un, X_train_un, y_train_un)
+dt_score_un
+
+# Model performance on validation set
+dt_score_un_val = model_performance_classification_sklearn(tuned_dt_un, X_val, y_val)
+dt_score_un_val
+
+confusion_matrix_sklearn(tuned_dt_un, X_val, y_val)
+
+"""Observations:
+
+1. Tuned Decision Tree train set performance was 91.2% Accuracy, 88.0% Recall, 94.0% Precision and 90.9% F1 score
+
+2. Tuned Decision Tree validation set performance was 90.9% Accuracy, 84.4% Recall, 36.3% Precision and 50.7% F1 score
+
+3. Time taken for tuned model to run was 2.03 s
+
+4. Cross validation accuracy score was 83.52%
+
+Hence, validation set shows slightly low performance score compared to training set. Also, we are getting reduced Recall score on undersampled data compared to oversampled data. Also, this undersampled model took lowest time to run comparatively. This model gave improved cross validation accuracy score of 83.52% compared to original model but reduced in comparison with oversampled data.
+
+**Looks like, original tuned decision tree model performance outperformed oversampled and undersampled model performance.**
+
+## Best three models Hyperparameter tuning:
+
+**Observations:**
+
+From the above results, the models which are concluded to further hypertuning are: **RandomForest Classifier, GradientBoost Classifier and XGBoost Classifier*
+
+**RandomForest Classifier: Original Model Tuning**
+"""
+
+# Commented out IPython magic to ensure Python compatibility.
+# %%time
+# # defining model
+# Model_rf = RandomForestClassifier(random_state=1)
+# 
+# # Parameter grid to pass in RandomSearchCV
+# param_grid = { "n_estimators": [200,250,300],
+#               "min_samples_leaf": np.arange(1, 4),
+#                "max_features": [np.arange(0.3, 0.6, 0.1),'sqrt'],
+#                "max_samples": np.arange(0.4, 0.7, 0.1) }
+# 
+# #Calling RandomizedSearchCV
+# randomized_cv = RandomizedSearchCV(estimator=Model_rf, param_distributions=param_grid, n_iter=10, n_jobs = 1, scoring=scorer, cv=5, random_state=1)
+# 
+# #Fitting parameters in RandomizedSearchCV
+# randomized_cv.fit(X_train,y_train)
+# 
+# print("Best parameters are {} with CV score={}:" .format(randomized_cv.best_params_,randomized_cv.best_score_))
+
+# Creating new pipeline with best parameters
+tuned_rf = RandomForestClassifier(
+    n_estimators=250,
+    min_samples_leaf= np.int64(1),
+    max_samples= np.float64(0.6),
+    max_features='sqrt',
+    random_state=1)
+
+tuned_rf.fit(X_train, y_train)
+
+# Model performance on training set
+rf_score = model_performance_classification_sklearn(tuned_rf, X_train, y_train)
+rf_score
+
+# Model performance on validation set
+rf_score_val = model_performance_classification_sklearn(tuned_rf, X_val, y_val)
+rf_score_val
+
+confusion_matrix_sklearn(tuned_rf, X_val, y_val)
+
+"""Observation of original data tuning:
+
+1. Tuned RandomForest Classifier train set performance was 99.5% Accuracy, 91.0% Recall, 100% Precision and 95.3% F1 score
+
+2. Tuned RandomForest Classifier validation set performance was 98.4% Accuracy, 72.1% Recall, 98.8% Precision and 83.3% F1 score
+
+3. Time taken for tuned model to run was 12 min 56 s
+
+4. Cross validation accuracy score was 69.50%
+
+Hence concluded, validation set showed reduced overall performance score compared to training set so it might be a possibility of overfitting. Also, this model took long time to run leading to fair cross validation accuracy score.
+
+**Oversampled RF model:**
+"""
+
+# Commented out IPython magic to ensure Python compatibility.
+# %%time
+# # defining model
+# Model_rf_over = RandomForestClassifier(random_state=1)
+# 
+# # Parameter grid to pass in RandomSearchCV
+# param_grid = { "n_estimators": [200,250,300],
+#               "min_samples_leaf": np.arange(1, 4),
+#                "max_features": [np.arange(0.3, 0.6, 0.1),'sqrt'],
+#                "max_samples": np.arange(0.4, 0.7, 0.1) }
+# 
+# #Calling RandomizedSearchCV
+# randomized_cv = RandomizedSearchCV(estimator=Model_rf_over, param_distributions=param_grid, n_iter=10, n_jobs = 1, scoring=scorer, cv=5, random_state=1)
+# 
+# #Fitting parameters in RandomizedSearchCV
+# randomized_cv.fit(X_train_over,y_train_over)
+# 
+# print("Best parameters are {} with CV score={}:" .format(randomized_cv.best_params_,randomized_cv.best_score_))
+
+# Creating new pipeline with best parameters
+tuned_rf_over = RandomForestClassifier(
+    n_estimators=250,
+    min_samples_leaf= np.int64(1),
+    max_samples= np.float64(0.6),
+    max_features='sqrt',
+    random_state=1)
+
+tuned_rf_over.fit(X_train_over, y_train_over)
+
+# Model Performance on training set
+rf_score_over = model_performance_classification_sklearn(tuned_rf_over, X_train_over, y_train_over)
+rf_score_over
+
+# Model Performance on validation set
+rf_score_over_val = model_performance_classification_sklearn(tuned_rf_over, X_val, y_val)
+rf_score_over_val
+
+confusion_matrix_sklearn(tuned_rf_over, X_val, y_val)
+
+"""Observation of oversampled data tuning:
+
+1. Tuned RandomForest Classifier train set performance was 100% Accuracy, 99.9% Recall, 100% Precision and 100% F1 score
+
+2. Tuned RandomForest Classifier validation set performance was 98.7% Accuracy, 86.5% Recall, 89.7% Precision and 88.1% F1 score
+
+3. Time taken for tuned model to run was 19 min 1 s
+
+4. Cross validation accuracy score was 98.15%
+
+Hence concluded, validation set showed slightly reduced overall performance score compared to training set. Also, this model took long time to run compared to original data set leading to improved cross validation accuracy score of 98.15%. As a result, this oversampled data model is better than original data model.
+
+**Undersampled rf model:**
+"""
+
+# Commented out IPython magic to ensure Python compatibility.
+# %%time
+# # defining model
+# Model_rf_un = RandomForestClassifier(random_state=1)
+# 
+# # Parameter grid to pass in RandomSearchCV
+# param_grid = { "n_estimators": [200,250,300],
+#               "min_samples_leaf": np.arange(1, 4),
+#                "max_features": [np.arange(0.3, 0.6, 0.1),'sqrt'],
+#                "max_samples": np.arange(0.4, 0.7, 0.1) }
+# 
+# #Calling RandomizedSearchCV
+# randomized_cv = RandomizedSearchCV(estimator=Model_rf_un, param_distributions=param_grid, n_iter=10, n_jobs = 1, scoring=scorer, cv=5, random_state=1)
+# 
+# #Fitting parameters in RandomizedSearchCV
+# randomized_cv.fit(X_train_un,y_train_un)
+# 
+# print("Best parameters are {} with CV score={}:" .format(randomized_cv.best_params_,randomized_cv.best_score_))
+
+# Creating new pipeline with best parameters
+tuned_rf_un = RandomForestClassifier(
+    n_estimators=300,
+    min_samples_leaf= np.int64(1),
+    max_samples= np.float64(0.6),
+    max_features='sqrt',
+    random_state=1)
+
+tuned_rf_un.fit(X_train_un, y_train_un)
+
+# Model performance of training set
+rf_score_un = model_performance_classification_sklearn(tuned_rf_un, X_train_un, y_train_un)
+rf_score_un
+
+# Model performance on validation set
+rf_score_un_val = model_performance_classification_sklearn(tuned_rf_un, X_val, y_val)
+rf_score_un_val
+
+confusion_matrix_sklearn(tuned_rf_un, X_val, y_val)
+
+"""Observation of undersampled data tuning:
+
+1. Tuned RandomForest Classifier train set performance was 98.8% Accuracy, 97.8% Recall, 99.9% Precision and 98.8% F1 score
+
+2. Tuned RandomForest Classifier validation set performance was 93.4% Accuracy, 88.0% Recall, 45.1% Precision and 59.7% F1 score
+
+3. Time taken for tuned model to run was 56.5 s
+
+4. Cross validation accuracy score was 90.47%
+
+Hence concluded, validation set showed slightly reduced overall performance score compared to training set and worst precision and F1 score. Also, this model took lowest time to run compared to original data and oversampled data model set leading to fair cross validation accuracy score of 98.15% which is less compared to oversampled data model.
+
+
+As a result, this oversampled data model is better than original data model as well as undersampled data model.
+
+**It appears that best model in RandomForest Classifier is Original tuned model.**
+
+**Gradient Boost Classifier: Original data set**
+"""
+
+# Commented out IPython magic to ensure Python compatibility.
+# %%time
+# # defining model
+# Model_gb = GradientBoostingClassifier(random_state=1)
+# 
+# # Parameter grid to pass in RandomSearchCV
+# param_grid =  { "n_estimators": np.arange(100,150,25),
+#                "learning_rate": [0.2, 0.05, 1],
+#                 "subsample":[0.5,0.7],
+#                 "max_features":[0.5,0.7] }
+# 
+# #Calling RandomizedSearchCV
+# randomized_cv = RandomizedSearchCV(estimator=Model_gb, param_distributions=param_grid, n_iter=10, n_jobs = 1, scoring=scorer, cv=5, random_state=1)
+# 
+# #Fitting parameters in RandomizedSearchCV
+# randomized_cv.fit(X_train,y_train)
+# 
+# print("Best parameters are {} with CV score={}:" .format(randomized_cv.best_params_,randomized_cv.best_score_))
+
+# Creating new pipeline with best parameters
+tuned_gb = GradientBoostingClassifier(
+    subsample= 0.7,
+    n_estimators= np.int64(125),
+    max_features= 0.5,
+    learning_rate= 0.2,
+    random_state=1)
+
+tuned_gb.fit(X_train, y_train)
+
+# Model performance on training set
+gb_score = model_performance_classification_sklearn(tuned_gb, X_train, y_train)
+gb_score
+
+# Model performance on validation set
+gb_score_val = model_performance_classification_sklearn(tuned_gb, X_val, y_val)
+gb_score_val
+
+confusion_matrix_sklearn(tuned_gb, X_val, y_val)
+
+"""Observation of original data tuning:
+
+1. Tuned Gradient Boosting Classifier train set performance was 99.5% Accuracy, 91.6% Recall, 98.9% Precision and 95.1% F1 score
+
+2. Tuned Gradient Boosting Classifier validation set performance was 98.1% Accuracy, 76.9% Recall, 88.0% Precision and 82.1% F1 score
+
+3. Time taken for tuned model to run was 8 min 14 s
+
+4. Cross validation accuracy score was 75.55%
+
+Overall, the validation performance was reduced with Recall and F1 score compared to training set. Also, cross validation was fair but not the best.
+
+**Gradient Boost Classifier Oversampled tuning:**
+"""
+
+# Commented out IPython magic to ensure Python compatibility.
+# %%time
+# # defining model
+# Model_gb_over = GradientBoostingClassifier(random_state=1)
+# 
+# # Parameter grid to pass in RandomSearchCV
+# param_grid =  { "n_estimators": np.arange(100,150,25),
+#                "learning_rate": [0.2, 0.05, 1],
+#                 "subsample":[0.5,0.7],
+#                 "max_features":[0.5,0.7] }
+# 
+# #Calling RandomizedSearchCV
+# randomized_cv = RandomizedSearchCV(estimator=Model_gb_over, param_distributions=param_grid, n_iter=10, n_jobs = 1, scoring=scorer, cv=5, random_state=1)
+# 
+# #Fitting parameters in RandomizedSearchCV
+# randomized_cv.fit(X_train_over,y_train_over)
+# 
+# print("Best parameters are {} with CV score={}:" .format(randomized_cv.best_params_,randomized_cv.best_score_))
+
+# Creating new pipeline with best parameters
+tuned_gb_over = GradientBoostingClassifier(
+    subsample= 0.7,
+    n_estimators= np.int64(125),
+    max_features= 0.5,
+    learning_rate= 1,
+    random_state=1)
+
+tuned_gb_over.fit(X_train_over, y_train_over)
+
+# Model performance on training set
+gb_score_over = model_performance_classification_sklearn(tuned_gb_over, X_train_over, y_train_over)
+gb_score_over
+
+# Model performance on validation set
+gb_score_over_val = model_performance_classification_sklearn(tuned_gb_over, X_val, y_val)
+gb_score_over_val
+
+confusion_matrix_sklearn(tuned_gb_over, X_val, y_val)
+
+"""Observation of oversampled data tuning:
+
+1. Tuned Gradient Boosting Classifier train set performance was 98.6% Accuracy, 98.5% Recall, 98.8% Precision and 98.6% F1 score
+
+2. Tuned Gradient Boosting Classifier validation set performance was 95.8% Accuracy, 82.6% Recall, 58.8% Precision and 68.7% F1 score
+
+3. Time taken for tuned model to run was 15 min 55 s
+
+4. Cross validation accuracy score was 97.16%
+
+Overall, the validation performance was reduced with Recall and F1 score compared to training set, there could be overfitting issue. It took more time to run than original model which is costly. Also, cross validation was improved from orignial data set. Hence, it is not clear that oversampled model performed better than original model.
+
+**Gradient Boosting Classifier: Undersampled tuning**
+"""
+
+# Commented out IPython magic to ensure Python compatibility.
+# %%time
+# # defining model
+# Model_gb_un = GradientBoostingClassifier(random_state=1)
+# 
+# # Parameter grid to pass in RandomSearchCV
+# param_grid =  { "n_estimators": np.arange(100,150,25),
+#                "learning_rate": [0.2, 0.05, 1],
+#                 "subsample":[0.5,0.7],
+#                 "max_features":[0.5,0.7] }
+# 
+# #Calling RandomizedSearchCV
+# randomized_cv = RandomizedSearchCV(estimator=Model_gb_un, param_distributions=param_grid, n_iter=10, n_jobs = 1, scoring=scorer, cv=5, random_state=1)
+# 
+# #Fitting parameters in RandomizedSearchCV
+# randomized_cv.fit(X_train_un,y_train_un)
+# 
+# print("Best parameters are {} with CV score={}:" .format(randomized_cv.best_params_,randomized_cv.best_score_))
+
+# Creating new pipeline with best parameters
+tuned_gb_un = GradientBoostingClassifier(
+    subsample= 0.7,
+    n_estimators= np.int64(100),
+    max_features= 0.7,
+    learning_rate= 0.05,
+    random_state=1)
+
+tuned_gb_un.fit(X_train_un, y_train_un)
+
+# Model Performance of training set
+gb_score_un = model_performance_classification_sklearn(tuned_gb_un, X_train, y_train)
+gb_score_un
+
+# Model performance on validation set
+gb_score_un_val = model_performance_classification_sklearn(tuned_gb_un, X_val, y_val)
+gb_score_un_val
+
+confusion_matrix_sklearn(tuned_gb_un, X_val, y_val)
+
+"""Observation of undersampled data tuning:
+
+1. Tuned Gradient Boosting Classifier train set performance was 93.3% Accuracy, 91.9% Recall, 44.8% Precision and 60.2% F1 score
+
+2. Tuned Gradient Boosting Classifier validation set performance was 92.1% Accuracy, 87.1% Recall, 40.3% Precision and 55.1% F1 score
+
+3. Time taken for tuned model to run was 1 min 11 s
+
+4. Cross validation accuracy score was 90.60%
+
+Overall, the validation performance was reduced with Recall and F1 score compared to training set and both Precision and F1 score of training and validation data set was worst. It took much lesser time to run than original model and oversampled model which makes it less costly. Also, cross validation was improved from orignial data set. Hence, it is clear that undersampled model performed bad than oversampled model and original model.
+
+**However, it looks like original Gradient Boost model outperformed oversampled and undersampled model in all metrics criteria**
+
+**XGBoost Classifer: Original Model Tuning**
+"""
+
+# Commented out IPython magic to ensure Python compatibility.
+# %%time
+# # defining model
+# Model_xg = XGBClassifier(random_state=1)
+# 
+# # Parameter grid to pass in RandomSearchCV
+# param_grid={ 'n_estimators': [150, 200, 250],
+#              'scale_pos_weight': [5,10],
+#              'learning_rate': [0.1,0.2],
+#              'gamma': [0,3,5],
+#              'subsample': [0.8,0.9] }
+# 
+# #Calling RandomizedSearchCV
+# randomized_cv = RandomizedSearchCV(estimator=Model_xg, param_distributions=param_grid, n_iter=10, n_jobs = 1, scoring=scorer, cv=5, random_state=1)
+# 
+# #Fitting parameters in RandomizedSearchCV
+# randomized_cv.fit(X_train,y_train)
+# 
+# print("Best parameters are {} with CV score={}:" .format(randomized_cv.best_params_,randomized_cv.best_score_))
+
+# Creating new pipeline with best parameters
+tuned_xg = XGBClassifier(
+    subsample= 0.8,
+    scale_pos_weight= 10,
+    n_estimators= 200,
+    learning_rate= 0.05,
+    gamma= 5,
+    random_state=1)
+
+tuned_xg.fit(X_train, y_train)
+
+# Model performance on training set
+xg_score = model_performance_classification_sklearn(tuned_xg, X_train, y_train)
+xg_score
+
+# Model performance on validation set
+xg_score_val = model_performance_classification_sklearn(tuned_xg, X_val, y_val)
+xg_score_val
+
+confusion_matrix_sklearn(tuned_xg, X_train, y_train)
+
+"""Observation of original XGB data tuning:
+
+1. Tuned XG Boosting Classifier train set performance was 99.8% Accuracy, 99.9% Recall, 97.0% Precision and 98.4% F1 score
+
+2. Tuned XG Boosting Classifier validation set performance was 98.8% Accuracy, 85.3% Recall, 91.6% Precision and 88.3% F1 score
+
+3. Time taken for tuned model to run was 1 min 21 s
+
+4. Cross validation accuracy score was 85.97%
+
+Overall, the validation performance was reduced with Recall and F1 score compared to training set. It took fair time to run. Also, cross validation was fair. The performance was good.
+
+**XGB Classifier: Oversampled model tuning:**
+"""
+
+# Commented out IPython magic to ensure Python compatibility.
+# %%time
+# # defining model
+# Model_xg_over = XGBClassifier(random_state=1)
+# 
+# # Parameter grid to pass in RandomSearchCV
+# param_grid={ 'n_estimators': [150, 200, 250],
+#              'scale_pos_weight': [5,10],
+#              'learning_rate': [0.1,0.2],
+#              'gamma': [0,3,5],
+#              'subsample': [0.8,0.9] }
+# 
+# #Calling RandomizedSearchCV
+# randomized_cv = RandomizedSearchCV(estimator=Model_xg_over, param_distributions=param_grid, n_iter=10, n_jobs = 1, scoring=scorer, cv=5, random_state=1)
+# 
+# #Fitting parameters in RandomizedSearchCV
+# randomized_cv.fit(X_train_over,y_train_over)
+# 
+# print("Best parameters are {} with CV score={}:" .format(randomized_cv.best_params_,randomized_cv.best_score_))
+
+# Creating new pipeline with best parameters
+tuned_xg_over = XGBClassifier(
+    subsample= 0.9,
+    scale_pos_weight= 10,
+    n_estimators= 200,
+    learning_rate= 0.2,
+    gamma= 0,
+    random_state=1)
+
+tuned_xg_over.fit(X_train_over, y_train_over)
+
+# Model performance on training set
+xg_score_over = model_performance_classification_sklearn(tuned_xg_over, X_train_over, y_train_over)
+xg_score_over
+
+# Model performance on validation set
+xg_score_over_val = model_performance_classification_sklearn(tuned_xg_over, X_val, y_val)
+xg_score_over_val
+
+confusion_matrix_sklearn(tuned_xg_over, X_val, y_val)
+
+"""Observation of Oversampled XGB data tuning:
+
+1. Tuned XG Boosting Classifier train set performance was 100% Accuracy, 100% Recall, 100% Precision and 100% F1 score
+
+2. Tuned XG Boosting Classifier validation set performance was 98.3% Accuracy, 88.0% Recall, 82.1% Precision and 84.9% F1 score
+
+3. Time taken for tuned model to run was 2 min 20 s
+
+4. Cross validation accuracy score was 99.63%
+
+Overall, the training performance shows 100% metrics which increases the possibility of overfitting. The validation set shows fair Recall and F1 score. It took more time to run than original model but not much that it affect the cost of programming. Also, cross validation was outstanding. The performance was good but there might be overfitting issue in this model.
+
+**XGB Classifier: Undersampled Model Tuning:**
+"""
+
+# Commented out IPython magic to ensure Python compatibility.
+# %%time
+# # defining model
+# Model_xg_un = XGBClassifier(random_state=1)
+# 
+# # Parameter grid to pass in RandomSearchCV
+# param_grid={ 'n_estimators': [150, 200, 250],
+#              'scale_pos_weight': [5,10],
+#              'learning_rate': [0.1,0.2],
+#              'gamma': [0,3,5],
+#              'subsample': [0.8,0.9] }
+# 
+# #Calling RandomizedSearchCV
+# randomized_cv = RandomizedSearchCV(estimator=Model_xg_un, param_distributions=param_grid, n_iter=10, n_jobs = 1, scoring=scorer, cv=5, random_state=1)
+# 
+# #Fitting parameters in RandomizedSearchCV
+# randomized_cv.fit(X_train_un,y_train_un)
+# 
+# print("Best parameters are {} with CV score={}:" .format(randomized_cv.best_params_,randomized_cv.best_score_))
+
+# Creating new pipeline with best parameters
+tuned_xg_un = XGBClassifier(
+    subsample= 0.8,
+    scale_pos_weight= 10,
+    n_estimators= 150,
+    learning_rate= 0.1,
+    gamma= 3,
+    random_state=1)
+
+tuned_xg_un.fit(X_train_un, y_train_un)
+
+# Model performance on training set
+xg_score_un = model_performance_classification_sklearn(tuned_xg_un, X_train_un, y_train_un)
+xg_score_un
+
+# Model performance on validation set
+xg_score_un_val = model_performance_classification_sklearn(tuned_xg_un, X_val, y_val)
+xg_score_un_val
+
+confusion_matrix_sklearn(tuned_xg_un, X_val, y_val)
+
+"""Observation of Undersampled XGB data tuning:
+
+1. Tuned XG Boosting Classifier train set performance was 99.4% Accuracy, 100% Recall, 98.9% Precision and 99.4% F1 score
+
+2. Tuned XG Boosting Classifier validation set performance was 85.1% Accuracy, 91.3% Recall, 26.0% Precision and 40.5% F1 score
+
+3. Time taken for tuned model to run was 36.5 s
+
+4. Cross validation accuracy score was 92.53%
+
+Overall, the training performance shows good score but validation performance was reduced which sparks the possibility of overfitting. The validation set shows worst Recall and F1 score. It took less time to run than oversampled model. Also, cross validation was good. The performance was not good as there might be overfitting issue in this model.
+
+### **Hence proved, that original tuning model of XGB Classifier outperformed oversampled and undersampled tuned model. **
+
+## Model performance comparison and choosing the final model
+
+From all the above tuned model, the best model selected are:
+
+1. Decision Tree Original Tuned Model
+2. Random Forest Original Tuned Model
+3. Gradient Boost Original Tuned Model
+4. XGBoost Original Tuned Model
+"""
+
+# training performance comparison
+
+models_train_comp_df = pd.concat(
+    [
+        dt_score.T,  # Transpose to have metrics as rows
+        rf_score.T,  # Transpose to have metrics as rows
+        gb_score.T,  # Transpose to have metrics as rows
+        xg_score.T,  # Transpose to have metrics as rows
+    ],
+    axis=1,
+)
+models_train_comp_df.columns = [
+    "Decision Tree tuned with original data",
+    "Random Forest tuned with original data",
+    "Gradient Boost tuned with original data",
+    "XGBoost tuned with original data",
+]
+print("Training performance comparison:")
+models_train_comp_df
+
+# Validation performance comparison
+
+models_val_comp_df = pd.concat(
+    [
+        dt_score_val.T,  # Transpose to have metrics as rows
+        rf_score_val.T,  # Transpose to have metrics as rows
+        gb_score_val.T,  # Transpose to have metrics as rows
+        xg_score_val.T,  # Transpose to have metrics as rows
+    ],
+    axis=1,
+)
+models_val_comp_df.columns = [
+    "Decision Tree tuned with original data",
+    "Random Forest tuned with original data",
+    "Gradient Boost tuned with original data",
+    "XGBoost tuned with original data",
+]
+print("Validation performance comparison:")
+models_val_comp_df
+
+"""Observations:
+
+1. Decision Tree model performance has low Recall score, so we cannot select that.
+
+2. Random Forest model performance shows good score but validation performance Recall score was low.
+
+3. Gradient Boosting train performance was good but it showed reduced performance on validation set
+
+4. XGBoost model shows good training and validation performance.
+
+
+#Hence, we will select XGBoost Original tuned model as best model for further model building
+
+### Test set final performance
+"""
+
+# Testing performance
+test_score_xg = model_performance_classification_sklearn(tuned_xg, X_test, y_test)
+test_score_xg
+
+confusion_matrix_sklearn(tuned_xg, X_test, y_test)
+
+"""**Observations: The performance on test was good, it also gave good recall score leading more True positives prediction of the model**"""
+
+# Feature Importances
+feature_names = X_train.columns
+importances = tuned_xg.feature_importances_
+indices = np.argsort(importances)
+
+plt.figure(figsize=(12, 12))
+plt.title("Feature Importances")
+plt.barh(range(len(indices)), importances[indices], color="violet", align="center")
+plt.yticks(range(len(indices)), [feature_names[i] for i in indices])
+plt.xlabel("Relative Importance")
+plt.show()
+
+"""**Observation: The most important feature for prediction are V18, V36, and V39**
+
+## Pipelines to build the final model
+"""
+
+# Separating target variable and other variables
+X1 = df.drop(columns="Target")
+y1 = df["Target"]
+
+# Since we already have a separate test set, we don't need to divide data into train and test
+
+X_test1 = df_test.drop(['Target'], axis=1)
+y_test1 = df_test['Target']
+
+# We can't oversample/undersample data without doing missing value treatment, so let's first treat the missing values in the train set
+imputer = SimpleImputer(strategy="median")
+X1 = imputer.fit_transform(X1)
+
+"""** We don't need to impute missing values in test set as it will be done inside pipeline**"""
+
+# Construct Pipeline
+pipeline_model = Pipeline(steps=[("pre", StandardScaler()), ("xg", tuned_xg)])
+
+pipeline_model.fit(X1, y1)
+
+pipeline_score_train = model_performance_classification_sklearn(pipeline_model, X1, y1)
+pipeline_score_train
+
+pipeline_score_test = model_performance_classification_sklearn(pipeline_model, X_test1, y_test1)
+pipeline_score_test
+
+"""Observations:
+
+1. The training performance of pipeline was 99.8% Accuracy, 99.9% Recall, 96.7% Precision, 98.3% F1 score
+
+2. The testing performance of pipeline was 98.7% Accuracy, 84.4% Recall, 91.9% Precision, 88.0% F1 score
+
+Overall, the performance of training and testing set under pipeline were outstanding with good Recall score which means it has less chances of not getting True Positives.
+
+# Business Insights and Conclusions
+
+1. The training set achieved near-perfect performance with 99.8% accuracy, 99.9% recall, 96.7% precision, and 98.3% F1-score, indicating the model effectively learned patterns in the data.
+
+2. The testing set maintained strong generalization with 98.7% accuracy, though recall dropped to 84.4%, while precision remained high at 91.9%, leading to an F1-score of 88.0%.
+
+3. A high recall (99.9% in training and 84.4% in testing) indicates that the model successfully identifies most failures, minimizing false negatives—a crucial factor for predictive maintenance.
+
+4. A precision of 91.9% on the testing set suggests the model makes accurate failure predictions, reducing unnecessary repairs and costs.
+
+5. The most influential features for predicting failures are V18, V36, and V39, making them critical variables for understanding generator breakdowns.
+
+6. The normal distribution of all variables (V1-V40) suggests well-balanced data, supporting reliable model training and inference.
+
+**Conclusion: **
+
+1. The pipeline demonstrates outstanding classification performance, particularly in recall, ensuring fewer failures go undetected. The strong test accuracy and Recall score confirm that the model generalizes well to unseen data. However, the drop in recall from training to testing indicates slight overfitting, suggesting potential for further fine-tuning.
+
+2. By leveraging this model, maintenance teams can proactively repair generators before failure, minimizing downtime, repair costs, and operational disruptions. Also, they should do frequent inspection of the units as inspection and repairs cost way too less than cost of replacing.
+
+3. Regular monitoring using the model's insights will allow early detection of potential failures, reducing unexpected downtime and optimizing maintenance scheduling.
+
+***
+"""
